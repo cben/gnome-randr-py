@@ -1,7 +1,25 @@
 #!/bin/env python3
 
-import sys, os, dbus
+# https://wiki.gnome.org/Initiatives/Wayland/Gaps/DisplayConfig (outdated),
+# https://gitlab.gnome.org/GNOME/mutter/-/blob/main/data/dbus-interfaces/org.gnome.Mutter.DisplayConfig.xml
+
+import sys, os, dbus, pprint
 from collections import defaultdict
+
+def walk(obj, depth):
+    match depth > 0, obj:
+        case True, dbus.Struct(): return tuple(walk(x, depth-1) for x in obj)  # ignoring obj.signature, seems to always be None.
+        case True, dbus.Array():  return [walk(x, depth-1) for x in obj]
+        case False, dbus.Struct(): return dbus.Struct(walk(x, depth-1) for x in obj)  # ignoring obj.signature, seems to always be None.
+        case False, dbus.Array():  return dbus.Array([walk(x, depth-1) for x in obj])
+        case _, dbus.Dictionary(): return dict(obj, signature=obj.signature)
+        case _, dbus.Double(): return float(obj)
+        case _, dbus.Int32(): return int(obj)
+        case _, dbus.String(): return str(obj)
+    return obj
+
+def pp(obj, depth=100, *args, **kw):
+    pprint.pp(walk(obj, depth), width=os.getenv('COLUMNS') or 100, *args, **kw)
 
 # from stackoverflow.com/questions/5369723
 nested_dict = lambda: defaultdict(nested_dict)
@@ -18,6 +36,7 @@ def usage():
           '\twhere options are:\n'
           '\t--current\n'
           '\t--short\n'
+          '\t--debug\n'
           '\t--dry-run\n'
           '\t--persistent\n'
           '\t--global-scale <global-scale>\n'
@@ -440,6 +459,7 @@ class ActionRequest:
     def __init__(self):
         self.print_current = False
         self.print_short = False
+        self.print_debug = False
         self.dry_run = False
         # 1: temporary, 2: persistent
         self.config_method = 1
@@ -765,6 +785,8 @@ while n < len(sys.argv):
         requested_actions.print_current = True
     elif arg == '--short':
         requested_actions.print_short = True
+    elif arg == '--debug':
+        requested_actions.print_debug = True
     elif arg == '--dry-run':
         requested_actions.dry_run = True
     elif arg == '--persistent':
@@ -875,11 +897,18 @@ serial, monitors, logical_monitors, properties = dc_iface.GetCurrentState()
 config_info = ConfigInfo(serial, monitors, logical_monitors, properties)
 config_info.update_output_config(requested_actions)
 
+if requested_actions.print_debug == True:
+    print(f'{dc=}')
+    print(f'monitors='); pp(monitors, depth=4, indent=2) # longest first
+    print(f'properties='); pp(properties, indent=2)
+    print(f'logical_monitors='); pp(logical_monitors, depth=1, indent=2)
+    print(f'{serial=}')
+
 if requested_actions.print_current == True:
     config_info.print_properties()
     config_info.print_current_config()
     quit()
-    
+
 if (len(requested_actions.output_config) == 0 or 
     requested_actions.print_short == True):
     config_info.print_short()
