@@ -7,16 +7,26 @@ import sys, os, dbus, pprint
 from collections import defaultdict
 
 def walk(obj, depth):
-    match depth > 0, obj:
-        case True, dbus.Struct(): return tuple(walk(x, depth-1) for x in obj)  # ignoring obj.signature, seems to always be None.
-        case True, dbus.Array():  return [walk(x, depth-1) for x in obj]
-        case False, dbus.Struct(): return dbus.Struct(walk(x, depth-1) for x in obj)  # ignoring obj.signature, seems to always be None.
-        case False, dbus.Array():  return dbus.Array([walk(x, depth-1) for x in obj])
-        case _, dbus.Dictionary(): return dict(obj, signature=obj.signature)
-        case _, dbus.Double(): return float(obj)
-        case _, dbus.Int32(): return int(obj)
-        case _, dbus.String(): return str(obj)
-    return obj
+    """Convert dbus types to native Python, recursively.
+
+    Use native tuple/list for outer `depth` levels to get pprint line breaking,
+    keeps dbus.Struct/dbus.Array below that whose repr() is a one-liner.
+    Other types are converted at all depths.
+    """
+    match = type(obj) # python3.8 poor man's match statement
+    return {
+        dbus.Struct: lambda: (# ignoring obj.signature, seems to always be None.
+                              tuple(walk(x, depth-1) for x in obj)
+                              if depth > 0 else
+                              dbus.Struct(walk(x, depth-1) for x in obj)),
+        dbus.Array: lambda: ([walk(x, depth-1) for x in obj]
+                              if depth > 0 else
+                              dbus.Array([walk(x, depth-1) for x in obj])),
+        dbus.Dictionary: lambda: dict(obj, signature=obj.signature),
+        dbus.Double: lambda: float(obj),
+        dbus.Int32: lambda: int(obj),
+        dbus.String: lambda: str(obj),
+    }.get(match, lambda: obj)()
 
 def pp(obj, depth=100, *args, **kw):
     pprint.pp(walk(obj, depth), width=os.getenv('COLUMNS') or 100, *args, **kw)
