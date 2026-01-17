@@ -738,6 +738,8 @@ class ConfigInfo:
 
 
     def print_current_config(self):
+        primary_status = {}
+
         for n in range(len(self.logical_monitors)):
             lm = self.logical_monitors[n]
             print('logical monitor {}:\n'
@@ -748,9 +750,13 @@ class ConfigInfo:
                   trans_to_rot(lm[3]), bool_to_str(lm[4])))
             for m in lm[5]:
                 print('\t{} {}'.format(m[0], m[2]))
+                primary_status[m[0]] = bool_to_str(lm[4])
             print()
         for m in self.monitors:
-            print('{} {} {} {}'.format(m[0][0], m[0][1], m[0][2], m[0][3]))
+            adapter = m[0][0]
+            primary = primary_status.get(adapter, 'no')
+            primary_display = 'primary' if primary == 'yes' else ''
+            print(f'{m[0][0]} connected {primary_display} {m[0][1]} {m[0][2]} {m[0][3]}')
             print(modes_to_str_pretty(m[1]))
 
     def print_short(self):
